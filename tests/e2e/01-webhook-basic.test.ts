@@ -2,9 +2,9 @@
  * E2E Test: WhatsApp Webhook — Basic Flow
  *
  * Prerequisites:
- *  - `wrangler dev` running on localhost:8787
+ *  - `supabase functions serve` running
  *  - Supabase local or remote with seed data
- *  - Evolution API mock or real instance
+ *  - WAHA mock or real instance
  *
  * Tests the fundamental webhook behavior: HMAC validation,
  * message filtering, unit resolution, and response flow.
@@ -14,12 +14,14 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import {
   TEST_CONFIG,
   sendWebhook,
-  buildEvolutionPayload,
+  buildWahaPayload,
   computeHmac,
   seedTestData,
   cleanupTestData,
   type TestSeedData,
 } from "./helpers";
+
+const WEBHOOK_URL = `${TEST_CONFIG.edgeFunctionUrl}/edge-whatsapp-webhook`;
 
 describe("Webhook — Basic Flow", () => {
   let seed: TestSeedData;
@@ -38,16 +40,14 @@ describe("Webhook — Basic Flow", () => {
 
   it("rejects requests without HMAC signature", async () => {
     const body = JSON.stringify(
-      buildEvolutionPayload({
+      buildWahaPayload({
         senderPhone: "5511988880000",
-        destinationNumber: "5511999990000",
+        session: "test-instance-e2e",
         message: "Olá",
-        pushName: "Carlos",
-        instance: "test-instance-e2e",
       })
     );
 
-    const res = await fetch(`${TEST_CONFIG.workerUrl}/webhook`, {
+    const res = await fetch(WEBHOOK_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body,
@@ -57,16 +57,14 @@ describe("Webhook — Basic Flow", () => {
   });
 
   it("rejects requests with invalid HMAC signature", async () => {
-    const payload = buildEvolutionPayload({
+    const payload = buildWahaPayload({
       senderPhone: "5511988880000",
-      destinationNumber: "5511999990000",
+      session: "test-instance-e2e",
       message: "Olá",
-      pushName: "Carlos",
-      instance: "test-instance-e2e",
     });
 
     const body = JSON.stringify(payload);
-    const res = await fetch(`${TEST_CONFIG.workerUrl}/webhook`, {
+    const res = await fetch(WEBHOOK_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -79,15 +77,13 @@ describe("Webhook — Basic Flow", () => {
   });
 
   it("accepts requests with valid HMAC signature", async () => {
-    const payload = buildEvolutionPayload({
+    const payload = buildWahaPayload({
       senderPhone: "5511988880000",
-      destinationNumber: "5511999990000",
+      session: "test-instance-e2e",
       message: "Olá",
-      pushName: "Carlos",
-      instance: "test-instance-e2e",
     });
 
-    const res = await sendWebhook(payload);
+    const res = await sendWebhook(payload, { secret: TEST_CONFIG.webhookSecret });
     expect(res.status).toBe(200);
   });
 
@@ -96,32 +92,28 @@ describe("Webhook — Basic Flow", () => {
   // -----------------------------------------------------------------------
 
   it("ignores group messages (@g.us)", async () => {
-    const payload = buildEvolutionPayload({
+    const payload = buildWahaPayload({
       senderPhone: "5511988880000",
-      destinationNumber: "5511999990000",
+      session: "test-instance-e2e",
       message: "Mensagem de grupo",
-      pushName: "Carlos",
-      instance: "test-instance-e2e",
       isGroup: true,
     });
 
-    const res = await sendWebhook(payload);
+    const res = await sendWebhook(payload, { secret: TEST_CONFIG.webhookSecret });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toHaveProperty("ignored", true);
   });
 
   it("ignores fromMe messages", async () => {
-    const payload = buildEvolutionPayload({
+    const payload = buildWahaPayload({
       senderPhone: "5511988880000",
-      destinationNumber: "5511999990000",
+      session: "test-instance-e2e",
       message: "Minha própria mensagem",
-      pushName: "Bot",
-      instance: "test-instance-e2e",
       fromMe: true,
     });
 
-    const res = await sendWebhook(payload);
+    const res = await sendWebhook(payload, { secret: TEST_CONFIG.webhookSecret });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toHaveProperty("ignored", true);
@@ -132,15 +124,13 @@ describe("Webhook — Basic Flow", () => {
   // -----------------------------------------------------------------------
 
   it("returns 200 silently when unit is not found", async () => {
-    const payload = buildEvolutionPayload({
+    const payload = buildWahaPayload({
       senderPhone: "5511988880000",
-      destinationNumber: "5500000000000", // unknown number
+      session: "unknown-instance",
       message: "Olá",
-      pushName: "Carlos",
-      instance: "unknown-instance",
     });
 
-    const res = await sendWebhook(payload);
+    const res = await sendWebhook(payload, { secret: TEST_CONFIG.webhookSecret });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toHaveProperty("ignored", true);
@@ -151,14 +141,14 @@ describe("Webhook — Basic Flow", () => {
   // -----------------------------------------------------------------------
 
   it("returns 405 for GET requests", async () => {
-    const res = await fetch(`${TEST_CONFIG.workerUrl}/webhook`, {
+    const res = await fetch(WEBHOOK_URL, {
       method: "GET",
     });
     expect(res.status).toBe(405);
   });
 
   it("returns 404 for unknown routes", async () => {
-    const res = await fetch(`${TEST_CONFIG.workerUrl}/unknown`, {
+    const res = await fetch(`${TEST_CONFIG.edgeFunctionUrl}/unknown-route`, {
       method: "POST",
     });
     expect(res.status).toBe(404);

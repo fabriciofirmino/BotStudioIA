@@ -222,22 +222,34 @@ export interface CancelarAgendamentoInput {
   appointment_id: string;
 }
 
-// ─── Evolution API Webhook Payload ──────────────────────────────────────────
+// ─── WAHA Webhook Types ────────────────────────────────────────────────────
 
-export interface EvolutionWebhookPayload {
+export interface WahaWebhookEvent {
+  id: string;
+  timestamp: number;
+  session: string;
+  metadata: Record<string, unknown> | null;
+  engine: string;
+  me: { id: string; pushName: string } | null;
   event: string;
-  instance: string;
-  data: {
-    key: {
-      remoteJid: string;
-      fromMe: boolean;
-      id: string;
-    };
-    pushName?: string;
-    message?: {
-      conversation?: string;
-      extendedTextMessage?: { text: string };
-    };
-    messageType?: string;
-  };
+  payload: WahaMessagePayload;
+}
+
+export interface WahaMessagePayload {
+  id: string;
+  timestamp: number;
+  from: string;
+  fromMe: boolean;
+  to: string;
+  participant: string | null;
+  body: string;
+  hasMedia: boolean;
+  media: unknown | null;
+  mediaUrl: string;
+  ack: number;
+  ackName: string;
+  source: string;
+  author: string | null;
+  replyTo: unknown | null;
+  _data: unknown;
 }

@@ -11,7 +11,7 @@
  *  - Edge function running: `supabase functions serve edge-cron-remarketing`
  *  - Supabase with seed data + marketing data
  *  - Anthropic API key
- *  - Evolution API (mock recommended)
+ *  - WAHA (mock recommended)
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";

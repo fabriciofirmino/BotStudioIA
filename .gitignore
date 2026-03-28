@@ -3,6 +3,4 @@ dist/
 .env
 .env.test
 .env.local
-.wrangler/
-.dev.vars
 *.log

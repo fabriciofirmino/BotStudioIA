@@ -12,15 +12,16 @@
  * This test validates the entire system working together.
  *
  * Prerequisites:
- *  - ALL services running (wrangler dev, supabase functions serve)
+ *  - `supabase functions serve` running (all edge functions)
  *  - All environment variables configured
- *  - Real or mocked external APIs
+ *  - Real or mocked external APIs (WAHA, Anthropic)
  */
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import {
+  TEST_CONFIG,
   sendWebhook,
-  buildEvolutionPayload,
+  buildWahaPayload,
   seedTestData,
   cleanupTestData,
   supabaseGet,
@@ -30,11 +31,8 @@ import {
   type TestSeedData,
 } from "./helpers";
 
-const EDGE_FUNCTION_URL =
-  process.env["EDGE_FUNCTION_URL"] ?? "http://localhost:54321/functions/v1";
-
 const authHeader = {
-  Authorization: `Bearer ${process.env["SUPABASE_SERVICE_ROLE_KEY"] ?? "test-key"}`,
+  Authorization: `Bearer ${TEST_CONFIG.supabaseKey}`,
 };
 
 describe("Full E2E Flow — Customer Lifecycle", () => {
@@ -53,15 +51,13 @@ describe("Full E2E Flow — Customer Lifecycle", () => {
   // -----------------------------------------------------------------------
 
   it("Step 1: Customer sends greeting via WhatsApp", async () => {
-    const payload = buildEvolutionPayload({
+    const payload = buildWahaPayload({
       senderPhone: "5511988880000",
-      destinationNumber: "5511999990000",
+      session: "test-instance-e2e",
       message: "Oi, boa tarde! Gostaria de agendar um corte",
-      pushName: "Carlos Teste",
-      instance: "test-instance-e2e",
     });
 
-    const res = await sendWebhook(payload);
+    const res = await sendWebhook(payload, { secret: TEST_CONFIG.webhookSecret });
     expect(res.status).toBe(200);
 
     const body = (await res.json()) as Record<string, unknown>;
@@ -77,15 +73,13 @@ describe("Full E2E Flow — Customer Lifecycle", () => {
     tomorrow.setDate(tomorrow.getDate() + 1);
     const dateStr = tomorrow.toISOString().split("T")[0];
 
-    const payload = buildEvolutionPayload({
+    const payload = buildWahaPayload({
       senderPhone: "5511988880000",
-      destinationNumber: "5511999990000",
+      session: "test-instance-e2e",
       message: `Quero agendar Corte Masculino para ${dateStr} às 10:00 com João Barbeiro, meu nome é Carlos Teste`,
-      pushName: "Carlos Teste",
-      instance: "test-instance-e2e",
     });
 
-    const res = await sendWebhook(payload);
+    const res = await sendWebhook(payload, { secret: TEST_CONFIG.webhookSecret });
     expect(res.status).toBe(200);
 
     // Wait for appointment to appear in DB
@@ -123,7 +117,7 @@ describe("Full E2E Flow — Customer Lifecycle", () => {
       }
     }
 
-    const res = await fetch(`${EDGE_FUNCTION_URL}/edge-cron-confirmacao`, {
+    const res = await fetch(`${TEST_CONFIG.edgeFunctionUrl}/edge-cron-confirmacao`, {
       method: "POST",
       headers: authHeader,
     });
@@ -148,7 +142,7 @@ describe("Full E2E Flow — Customer Lifecycle", () => {
   // -----------------------------------------------------------------------
 
   it("Step 4: Lembrete cron sends reminder for tomorrow's appointment", async () => {
-    const res = await fetch(`${EDGE_FUNCTION_URL}/edge-cron-lembretes`, {
+    const res = await fetch(`${TEST_CONFIG.edgeFunctionUrl}/edge-cron-lembretes`, {
       method: "POST",
       headers: authHeader,
     });
@@ -178,7 +172,7 @@ describe("Full E2E Flow — Customer Lifecycle", () => {
       });
     }
 
-    const res = await fetch(`${EDGE_FUNCTION_URL}/edge-cron-noshow`, {
+    const res = await fetch(`${TEST_CONFIG.edgeFunctionUrl}/edge-cron-noshow`, {
       method: "POST",
       headers: authHeader,
     });
@@ -198,7 +192,7 @@ describe("Full E2E Flow — Customer Lifecycle", () => {
   // -----------------------------------------------------------------------
 
   it("Step 6: Relatório cron generates daily report", async () => {
-    const res = await fetch(`${EDGE_FUNCTION_URL}/edge-cron-relatorio`, {
+    const res = await fetch(`${TEST_CONFIG.edgeFunctionUrl}/edge-cron-relatorio`, {
       method: "POST",
       headers: authHeader,
     });

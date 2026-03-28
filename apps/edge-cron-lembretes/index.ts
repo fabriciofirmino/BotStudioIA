@@ -1,6 +1,6 @@
 import {
   SupabaseClient,
-  EvolutionClient,
+  WahaClient,
   structuredLog,
   formatDate,
   formatTime,
@@ -21,9 +21,9 @@ Deno.serve(async (_req: Request) => {
     serviceRoleKey: Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
   });
 
-  const evolution = new EvolutionClient({
-    apiUrl: Deno.env.get("EVOLUTION_API_URL") ?? "",
-    apiKey: Deno.env.get("EVOLUTION_API_KEY") ?? "",
+  const waha = new WahaClient({
+    apiUrl: Deno.env.get("WAHA_API_URL") ?? "",
+    apiKey: Deno.env.get("WAHA_API_KEY") ?? "",
   });
 
   // Calculate tomorrow in São Paulo timezone (UTC-3)
@@ -118,7 +118,7 @@ Deno.serve(async (_req: Request) => {
 
         const message = messageParts.join("\n");
         const phone = normalizePhone(client.phone);
-        await evolution.sendText(unit.whatsappInstance, phone, message);
+        await waha.sendText(unit.whatsappInstance, phone, message);
 
         sent++;
 

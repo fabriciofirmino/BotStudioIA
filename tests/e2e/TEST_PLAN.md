@@ -5,41 +5,44 @@
 Este plano cobre o teste end-to-end de todo o fluxo do StudioFlow,
 desde o recebimento de mensagens WhatsApp até a execução dos cron jobs.
 
+Arquitetura: **100% serverless** com Supabase Edge Functions (Deno),
+WAHA (WhatsApp HTTP API) e Upstash Redis.
+
 ---
 
 ## Pré-requisitos
 
 ### Serviços Necessários
 
-| Serviço              | Comando                                       | URL padrão                |
-|----------------------|-----------------------------------------------|---------------------------|
-| Cloudflare Worker    | `cd apps/worker-whatsapp-agent && wrangler dev` | http://localhost:8787    |
-| Supabase local       | `supabase start`                              | http://localhost:54321    |
-| Edge Functions       | `supabase functions serve`                    | http://localhost:54321/functions/v1 |
-| Evolution API (mock) | Mock server ou instância real                 | http://localhost:8080     |
+| Serviço              | Comando                  | URL padrão                          |
+|----------------------|--------------------------|-------------------------------------|
+| Supabase local       | `supabase start`         | http://localhost:54321              |
+| Edge Functions       | `supabase functions serve`| http://localhost:54321/functions/v1 |
+| WAHA (mock)          | Mock server ou real      | http://localhost:3000               |
 
 ### Variáveis de Ambiente
 
 Copie `.env.example` para `.env.test` e preencha:
 
 ```bash
-WORKER_URL=http://localhost:8787
 SUPABASE_URL=http://localhost:54321
 SUPABASE_SERVICE_ROLE_KEY=<sua-key>
-EVOLUTION_API_URL=http://localhost:8080
-EVOLUTION_API_KEY=<sua-key>
 ANTHROPIC_API_KEY=<sua-key>
+WAHA_API_URL=http://localhost:3000
+WAHA_API_KEY=<sua-key>
 WEBHOOK_SECRET=test-webhook-secret
+UPSTASH_REDIS_URL=<sua-url>
+UPSTASH_REDIS_TOKEN=<seu-token>
 EDGE_FUNCTION_URL=http://localhost:54321/functions/v1
 ```
 
-### Mock da Evolution API (Recomendado)
+### Mock do WAHA (Recomendado)
 
 Para testes locais, use um servidor mock que capture mensagens enviadas:
 
 ```bash
 # Exemplo com json-server ou servidor HTTP simples
-# que aceite POST em /message/sendText/{instance} e retorne 200
+# que aceite POST em /api/sendText e retorne 200
 ```
 
 ---
@@ -58,7 +61,7 @@ Para testes locais, use um servidor mock que capture mensagens enviadas:
 | 4 | Mensagem de grupo (@g.us)            | 200 + `{ignored: true}`         |
 | 5 | Mensagem fromMe=true                 | 200 + `{ignored: true}`         |
 | 6 | Unit não encontrada                  | 200 + `{ignored: true}`         |
-| 7 | GET no /webhook                      | 405 Method Not Allowed          |
+| 7 | GET no endpoint                      | 405 Method Not Allowed          |
 | 8 | POST em rota desconhecida            | 404 Not Found                   |
 
 ---
@@ -74,7 +77,7 @@ Para testes locais, use um servidor mock que capture mensagens enviadas:
 | 3 | Pergunta sobre disponibilidade       | Agente chama `consultar_agenda`, mostra horários |
 | 4 | Solicita agendamento completo        | Agente chama `criar_agendamento`, appointment no DB |
 | 5 | Solicita cancelamento                | Agente oferece remarcação, depois cancela     |
-| 6 | Follow-up sem contexto explícito     | Agente mantém contexto do histórico (KV)     |
+| 6 | Follow-up sem contexto explícito     | Agente mantém contexto do histórico (Redis)  |
 
 ---
 
@@ -144,7 +147,7 @@ Para testes locais, use um servidor mock que capture mensagens enviadas:
 
 | Step | Ação                                | Verificação                                  |
 |------|-------------------------------------|----------------------------------------------|
-| 1    | Cliente envia "Olá" via WhatsApp    | Worker responde, 200 OK                      |
+| 1    | Cliente envia "Olá" via WhatsApp    | Edge Function responde, 200 OK               |
 | 2    | Cliente agenda serviço              | Appointment criado no DB                     |
 | 3    | Cron confirmação executa            | Status PENDING → CONFIRMED                   |
 | 4    | Cron lembretes executa              | Reminder enviado (appointment é para amanhã) |
@@ -159,7 +162,6 @@ Para testes locais, use um servidor mock que capture mensagens enviadas:
 ```bash
 # 1. Iniciar serviços
 supabase start
-cd apps/worker-whatsapp-agent && wrangler dev &
 supabase functions serve &
 
 # 2. Carregar variáveis

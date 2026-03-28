@@ -2,20 +2,16 @@
   "name": "studioflow-backend",
   "private": true,
   "version": "1.0.0",
-  "description": "StudioFlow backend — Cloudflare Workers + Supabase Edge Functions",
+  "description": "StudioFlow backend — Supabase Edge Functions (serverless)",
   "scripts": {
     "build:sdk": "pnpm --filter studioflow-sdk build",
-    "build:worker": "pnpm --filter worker-whatsapp-agent build",
-    "dev:worker": "pnpm --filter worker-whatsapp-agent dev",
     "test": "vitest run",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "typecheck": "tsc --noEmit -p tsconfig.base.json"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20250310.0",
     "typescript": "^5.7.0",
-    "vitest": "^3.0.0",
-    "wrangler": "^4.0.0"
+    "vitest": "^3.0.0"
   },
   "pnpm": {
     "workspace": true

@@ -3,9 +3,8 @@
  *
  * These tests hit real (or local) services:
  * - Supabase (can use local via `supabase start`)
- * - Evolution API (mock server or real)
- * - Cloudflare Worker (via `wrangler dev`)
- * - Edge Functions (via `supabase functions serve`)
+ * - WAHA (WhatsApp HTTP API) — mock server or real
+ * - Supabase Edge Functions (via `supabase functions serve`)
  */
 
 // ---------------------------------------------------------------------------
@@ -19,11 +18,11 @@ export function getEnv(key: string): string {
 }
 
 export const TEST_CONFIG = {
-  workerUrl: process.env["WORKER_URL"] ?? "http://localhost:8787",
+  edgeFunctionUrl: process.env["EDGE_FUNCTION_URL"] ?? "http://localhost:54321/functions/v1",
   supabaseUrl: process.env["SUPABASE_URL"] ?? "http://localhost:54321",
   supabaseKey: process.env["SUPABASE_SERVICE_ROLE_KEY"] ?? "test-service-role-key",
-  evolutionUrl: process.env["EVOLUTION_API_URL"] ?? "http://localhost:8080",
-  evolutionKey: process.env["EVOLUTION_API_KEY"] ?? "test-api-key",
+  wahaApiUrl: process.env["WAHA_API_URL"] ?? "http://localhost:3000",
+  wahaApiKey: process.env["WAHA_API_KEY"] ?? "test-waha-key",
   webhookSecret: process.env["WEBHOOK_SECRET"] ?? "test-webhook-secret",
 } as const;
 
@@ -134,6 +133,69 @@ export async function supabaseRpc<T>(
 // Webhook helpers
 // ---------------------------------------------------------------------------
 
+export function buildWahaPayload(params: {
+  senderPhone: string;
+  session: string;
+  message: string;
+  fromMe?: boolean;
+  isGroup?: boolean;
+}): Record<string, unknown> {
+  const from = params.isGroup
+    ? `120363000000000000@g.us`
+    : `${params.senderPhone}@c.us`;
+
+  return {
+    id: `TEST_${Date.now()}`,
+    timestamp: Date.now(),
+    session: params.session,
+    metadata: null,
+    engine: "NOWEB",
+    me: { id: `${params.senderPhone}@c.us`, pushName: "Bot" },
+    event: "message",
+    payload: {
+      id: `true_${params.senderPhone}@c.us_TEST${Date.now()}`,
+      timestamp: Math.floor(Date.now() / 1000),
+      from,
+      fromMe: params.fromMe ?? false,
+      to: "bot@c.us",
+      participant: params.isGroup ? `${params.senderPhone}@c.us` : null,
+      body: params.message,
+      hasMedia: false,
+      media: null,
+      mediaUrl: "",
+      ack: 0,
+      ackName: "PENDING",
+      source: "APP",
+      author: null,
+      replyTo: null,
+      _data: {},
+    },
+  };
+}
+
+export async function sendWebhook(
+  payload: Record<string, unknown>,
+  options: { secret?: string } = {}
+): Promise<Response> {
+  const body = JSON.stringify(payload);
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+
+  // If a secret is provided, compute HMAC and attach it
+  if (options.secret) {
+    const signature = await computeHmac(options.secret, body);
+    headers["x-hub-signature-256"] = signature;
+  }
+
+  return fetch(`${TEST_CONFIG.edgeFunctionUrl}/edge-whatsapp-webhook`, {
+    method: "POST",
+    headers,
+    body,
+  });
+}
+
 export async function computeHmac(secret: string, body: string): Promise<string> {
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey(
@@ -148,56 +210,6 @@ export async function computeHmac(secret: string, body: string): Promise<string>
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
   return `sha256=${hex}`;
-}
-
-export function buildEvolutionPayload(params: {
-  senderPhone: string;
-  destinationNumber: string;
-  message: string;
-  pushName: string;
-  instance: string;
-  fromMe?: boolean;
-  isGroup?: boolean;
-}): Record<string, unknown> {
-  const jid = params.isGroup
-    ? `${params.senderPhone}@g.us`
-    : `${params.senderPhone}@s.whatsapp.net`;
-
-  return {
-    event: "messages.upsert",
-    instance: params.instance,
-    data: {
-      key: {
-        remoteJid: jid,
-        fromMe: params.fromMe ?? false,
-        id: `TEST_${Date.now()}`,
-      },
-      pushName: params.pushName,
-      message: {
-        conversation: params.message,
-      },
-      messageType: "conversation",
-      messageTimestamp: Math.floor(Date.now() / 1000),
-    },
-  };
-}
-
-export async function sendWebhook(
-  payload: Record<string, unknown>,
-  options: { secret?: string } = {}
-): Promise<Response> {
-  const body = JSON.stringify(payload);
-  const secret = options.secret ?? TEST_CONFIG.webhookSecret;
-  const signature = await computeHmac(secret, body);
-
-  return fetch(`${TEST_CONFIG.workerUrl}/webhook`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-hub-signature-256": signature,
-    },
-    body,
-  });
 }
 
 // ---------------------------------------------------------------------------

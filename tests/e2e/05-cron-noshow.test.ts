@@ -9,7 +9,7 @@
  * Prerequisites:
  *  - Edge function running: `supabase functions serve edge-cron-noshow`
  *  - Supabase with seed data
- *  - Evolution API (mock recommended)
+ *  - WAHA (mock recommended)
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";

@@ -1,6 +1,6 @@
 import {
   SupabaseClient,
-  EvolutionClient,
+  WahaClient,
   AnthropicClient,
   extractText,
   structuredLog,
@@ -19,9 +19,9 @@ Deno.serve(async (_req: Request) => {
     serviceRoleKey: Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
   });
 
-  const evolution = new EvolutionClient({
-    apiUrl: Deno.env.get("EVOLUTION_API_URL") ?? "",
-    apiKey: Deno.env.get("EVOLUTION_API_KEY") ?? "",
+  const waha = new WahaClient({
+    apiUrl: Deno.env.get("WAHA_API_URL") ?? "",
+    apiKey: Deno.env.get("WAHA_API_KEY") ?? "",
   });
 
   const anthropic = new AnthropicClient({
@@ -116,7 +116,7 @@ Deno.serve(async (_req: Request) => {
             const personalizedMessage = extractText(claudeResponse);
 
             const phone = normalizePhone(client.phone);
-            await evolution.sendText(
+            await waha.sendText(
               unit.whatsappInstance,
               phone,
               personalizedMessage,

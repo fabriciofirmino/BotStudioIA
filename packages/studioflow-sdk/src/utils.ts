@@ -65,23 +65,7 @@ export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// ─── Helpers for Evolution webhook payloads ─────────────────────────────────
-
-/**
- * Extract message text from an Evolution webhook data payload.
- */
-export function extractMessageText(data: {
-  message?: {
-    conversation?: string;
-    extendedTextMessage?: { text: string };
-  };
-}): string | null {
-  return (
-    data.message?.conversation ??
-    data.message?.extendedTextMessage?.text ??
-    null
-  );
-}
+// ─── Helpers for WhatsApp JID handling ──────────────────────────────────────
 
 /**
  * Returns true if the remoteJid belongs to a group chat.

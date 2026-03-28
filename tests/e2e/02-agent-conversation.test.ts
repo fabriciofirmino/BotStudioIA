@@ -5,16 +5,17 @@
  * greeting → list services → check availability → book → cancel
  *
  * Prerequisites:
- *  - `wrangler dev` running
+ *  - `supabase functions serve` running
  *  - Supabase with seed data + RPC functions deployed
- *  - Evolution API (mock recommended — capture sent messages)
+ *  - WAHA (mock recommended — capture sent messages)
  *  - Anthropic API key configured
  */
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import {
+  TEST_CONFIG,
   sendWebhook,
-  buildEvolutionPayload,
+  buildWahaPayload,
   seedTestData,
   cleanupTestData,
   supabaseGet,
@@ -34,14 +35,12 @@ describe("Agent Conversation — Full Flow", () => {
   });
 
   const sendMessage = async (message: string) => {
-    const payload = buildEvolutionPayload({
+    const payload = buildWahaPayload({
       senderPhone: "5511988880000",
-      destinationNumber: "5511999990000",
+      session: "test-instance-e2e",
       message,
-      pushName: "Carlos Teste",
-      instance: "test-instance-e2e",
     });
-    return sendWebhook(payload);
+    return sendWebhook(payload, { secret: TEST_CONFIG.webhookSecret });
   };
 
   // -----------------------------------------------------------------------
