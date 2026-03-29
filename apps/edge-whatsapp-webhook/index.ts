@@ -9,6 +9,8 @@ import {
   formatDate,
   formatTime,
   formatCurrency,
+  checkAndIncrementAiQuota,
+  checkPhoneRateLimit,
 } from "../../packages/studioflow-sdk/src/index.ts";
 import type {
   WahaWebhookEvent,
@@ -754,6 +756,36 @@ Deno.serve(async (req: Request) => {
 
     if (!unit.aiEnabled) {
       return jsonResponse({ ignored: true, reason: "ai_disabled" });
+    }
+
+    // ── Rate limit: phone flood protection ──
+    const phoneCheck = await checkPhoneRateLimit(redis, supabase, unit.id, senderPhone);
+    if (!phoneCheck.allowed) {
+      structuredLog("warn", "phone_rate_limited", {
+        unitId: unit.id,
+        phone: senderPhone,
+        current: phoneCheck.current,
+        limit: phoneCheck.limit,
+      });
+      return jsonResponse({ ignored: true, reason: "rate_limited" });
+    }
+
+    // ── Quota: monthly AI messages ──
+    const aiQuota = await checkAndIncrementAiQuota(redis, supabase, unit.id);
+    if (!aiQuota.allowed) {
+      structuredLog("warn", "ai_quota_exceeded", {
+        unitId: unit.id,
+        current: aiQuota.current,
+        limit: aiQuota.limit,
+      });
+      // Send a friendly message to the client
+      await waha.sendText(
+        session,
+        senderPhone,
+        "Desculpe, nosso atendimento automático atingiu o limite mensal. " +
+        "Por favor, entre em contato diretamente pelo telefone do estabelecimento."
+      );
+      return jsonResponse({ ignored: true, reason: "quota_exceeded" });
     }
 
     // Build system prompt via RPC

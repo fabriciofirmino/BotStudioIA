@@ -39,6 +39,8 @@ studioflow-backend/
 │   │   └── index.ts
 │   ├── edge-whatsapp-sessions/   # Gerenciamento de sessões WAHA
 │   │   └── index.ts
+│   ├── edge-admin-plans/         # CRUD planos + uso + atribuição
+│   │   └── index.ts
 │   ├── edge-cron-confirmacao/    # Cron: confirma agendamentos PENDING
 │   │   └── index.ts
 │   ├── edge-cron-lembretes/      # Cron: lembrete para amanhã
@@ -206,6 +208,48 @@ END;
 $$ LANGUAGE plpgsql;
 ```
 
+Tabelas de **planos e limites** (configurável pelo admin):
+
+```sql
+-- Planos com limites configuráveis
+CREATE TABLE "Plan" (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL,                          -- "Free", "Pro", "Business"
+  slug TEXT NOT NULL UNIQUE,                   -- "free", "pro", "business"
+  "maxAiMessagesPerMonth" INTEGER NOT NULL DEFAULT 100,
+  "maxClientsPerUnit" INTEGER NOT NULL DEFAULT 50,
+  "maxProfessionalsPerUnit" INTEGER NOT NULL DEFAULT 1,
+  "maxCampaignsPerDay" INTEGER NOT NULL DEFAULT 1,
+  "maxMessagesPerPhonePerHour" INTEGER NOT NULL DEFAULT 20,
+  price NUMERIC(10,2) NOT NULL DEFAULT 0,
+  "isActive" BOOLEAN NOT NULL DEFAULT true,
+  "createdAt" TIMESTAMPTZ DEFAULT now(),
+  "updatedAt" TIMESTAMPTZ DEFAULT now()
+);
+
+-- Associação Unit ↔ Plan
+CREATE TABLE "UnitPlan" (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  "unitId" UUID NOT NULL REFERENCES "Unit"(id),
+  "planId" UUID NOT NULL REFERENCES "Plan"(id),
+  "startsAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+  "expiresAt" TIMESTAMPTZ,
+  "isActive" BOOLEAN NOT NULL DEFAULT true,
+  "createdAt" TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX idx_unitplan_unit ON "UnitPlan"("unitId") WHERE "isActive" = true;
+
+-- Seed: planos padrão
+INSERT INTO "Plan" (name, slug, "maxAiMessagesPerMonth", "maxClientsPerUnit",
+  "maxProfessionalsPerUnit", "maxCampaignsPerDay", "maxMessagesPerPhonePerHour", price)
+VALUES
+  ('Free',     'free',     100,  50,  1, 1,  20, 0),
+  ('Pro',      'pro',      1000, 500, 5, 5,  30, 99.90),
+  ('Business', 'business', 5000, -1,  -1, 20, 50, 299.90);
+-- (-1 = ilimitado, tratado no código)
+```
+
 ### 4. Subir o WAHA (WhatsApp)
 
 ```bash
@@ -287,6 +331,7 @@ O valor `"name"` deve ser igual ao campo `whatsappInstance` na tabela `Unit`.
 # Deploy de todas as funções
 supabase functions deploy edge-whatsapp-webhook --project-ref xrarnvibyloemhsrvejy
 supabase functions deploy edge-whatsapp-sessions --project-ref xrarnvibyloemhsrvejy
+supabase functions deploy edge-admin-plans --project-ref xrarnvibyloemhsrvejy
 supabase functions deploy edge-cron-confirmacao --project-ref xrarnvibyloemhsrvejy
 supabase functions deploy edge-cron-lembretes --project-ref xrarnvibyloemhsrvejy
 supabase functions deploy edge-cron-noshow --project-ref xrarnvibyloemhsrvejy
@@ -462,6 +507,68 @@ Todas requerem header `Authorization: Bearer <SUPABASE_SERVICE_ROLE_KEY>`.
 | `WORKING` | Conectado e funcionando |
 | `FAILED` | Erro na sessão |
 
+### Gestão de Planos e Limites (Admin)
+
+Todas requerem header `Authorization: Bearer <SUPABASE_SERVICE_ROLE_KEY>`.
+
+| Rota | Método | Descrição |
+|---|---|---|
+| `/functions/v1/edge-admin-plans` | `GET` | Lista todos os planos ativos |
+| `/functions/v1/edge-admin-plans` | `POST` | Cria novo plano |
+| `/functions/v1/edge-admin-plans/:planId` | `PATCH` | Atualiza limites de um plano |
+| `/functions/v1/edge-admin-plans/:planId` | `DELETE` | Desativa um plano (soft delete) |
+| `/functions/v1/edge-admin-plans/unit/:unitId` | `GET` | Plano atual + uso da Unit |
+| `/functions/v1/edge-admin-plans/unit/:unitId/assign` | `POST` | Atribui plano a uma Unit |
+| `/functions/v1/edge-admin-plans/unit/:unitId/plan` | `DELETE` | Remove plano (volta ao default) |
+
+**Criar plano:**
+```bash
+curl -X POST .../edge-admin-plans \
+  -H "Authorization: Bearer KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Pro",
+    "slug": "pro",
+    "maxAiMessagesPerMonth": 1000,
+    "maxClientsPerUnit": 500,
+    "maxProfessionalsPerUnit": 5,
+    "maxCampaignsPerDay": 5,
+    "maxMessagesPerPhonePerHour": 30,
+    "price": 99.90
+  }'
+```
+
+**Atribuir plano a uma Unit:**
+```bash
+curl -X POST .../edge-admin-plans/unit/{UNIT_ID}/assign \
+  -H "Authorization: Bearer KEY" \
+  -d '{ "planId": "uuid-do-plano" }'
+```
+
+**Ver uso atual:**
+```bash
+curl .../edge-admin-plans/unit/{UNIT_ID} -H "Authorization: Bearer KEY"
+# Resposta:
+# {
+#   "plan": { "name": "Pro", "slug": "pro" },
+#   "aiMessages": { "current": 342, "limit": 1000, "remainingPercent": 66 },
+#   "campaignsToday": { "current": 2, "limit": 5, "remainingPercent": 60 }
+# }
+```
+
+**Limites aplicados automaticamente:**
+
+| Limite | Onde atua | Default (sem plano) |
+|---|---|---|
+| Mensagens IA/mês | Webhook WhatsApp | 100 |
+| Msgs por telefone/hora | Webhook WhatsApp (anti-flood) | 20 |
+| Campanhas por dia | Cron remarketing | 1 |
+| Clientes por Unit | Validação no cadastro | 50 |
+| Profissionais por Unit | Validação no cadastro | 1 |
+
+Quando o limite mensal de IA é atingido, o cliente recebe:
+> *"Desculpe, nosso atendimento automático atingiu o limite mensal. Por favor, entre em contato diretamente pelo telefone do estabelecimento."*
+
 ### Cron Functions
 
 Todas requerem header `Authorization: Bearer <SUPABASE_SERVICE_ROLE_KEY>`.
@@ -533,6 +640,8 @@ As tabelas usam **PascalCase** no PostgreSQL:
 | `Appointment` | id, unitId, clientId, professionalId, serviceId, startsAt, endsAt, status, entryMode, retroReason, totalPrice |
 | `MarketingAudience` | id, unitId, name, description, active |
 | `MarketingCampaign` | id, unitId, name, message, status (DRAFT/ACTIVE/PAUSED), audienceId |
+| `Plan` | id, name, slug, maxAiMessagesPerMonth, maxClientsPerUnit, maxProfessionalsPerUnit, maxCampaignsPerDay, maxMessagesPerPhonePerHour, price, isActive |
+| `UnitPlan` | id, unitId, planId, startsAt, expiresAt, isActive |
 | `User` | id, name, email, role, organizationId, defaultUnitId |
 
 **Enums:**

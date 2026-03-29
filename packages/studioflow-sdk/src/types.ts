@@ -253,3 +253,54 @@ export interface WahaMessagePayload {
   replyTo: unknown | null;
   _data: unknown;
 }
+
+// ─── Plan & Usage Types ────────────────────────────────────────────────────
+
+export interface Plan {
+  id: string;
+  name: string;
+  slug: string;
+  maxAiMessagesPerMonth: number;
+  maxClientsPerUnit: number;
+  maxProfessionalsPerUnit: number;
+  maxCampaignsPerDay: number;
+  maxMessagesPerPhonePerHour: number;
+  price: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UnitPlan {
+  id: string;
+  unitId: string;
+  planId: string;
+  startsAt: string;
+  expiresAt: string | null;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface UsageCounter {
+  id: string;
+  unitId: string;
+  metric: UsageMetric;
+  period: string;
+  count: number;
+  limit: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type UsageMetric =
+  | "ai_messages_monthly"
+  | "campaigns_daily"
+  | "messages_per_phone_hourly";
+
+export interface QuotaCheckResult {
+  allowed: boolean;
+  current: number;
+  limit: number;
+  metric: string;
+  remainingPercent: number;
+}
