@@ -9,6 +9,8 @@ import {
   formatDate,
   formatTime,
   formatCurrency,
+  checkAndIncrementAiQuota,
+  checkPhoneRateLimit,
 } from "../../packages/studioflow-sdk/src/index.ts";
 import type {
   WahaWebhookEvent,
@@ -754,6 +756,14 @@ Deno.serve(async (req: Request) => {
 
     if (!unit.aiEnabled) {
       return jsonResponse({ ignored: true, reason: "ai_disabled" });
+    }
+
+    // ── Usage tracking (no blocking, just counting) ──
+    try {
+      await checkPhoneRateLimit(redis, supabase, unit.id, senderPhone);
+      await checkAndIncrementAiQuota(redis, supabase, unit.id);
+    } catch {
+      // Usage tracking failure should never block messages
     }
 
     // Build system prompt via RPC

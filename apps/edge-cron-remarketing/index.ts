@@ -2,6 +2,8 @@ import {
   SupabaseClient,
   WahaClient,
   AnthropicClient,
+  RedisClient,
+  checkCampaignQuota,
   extractText,
   structuredLog,
   normalizePhone,
@@ -28,6 +30,11 @@ Deno.serve(async (_req: Request) => {
     apiKey: Deno.env.get("ANTHROPIC_API_KEY") ?? "",
   });
 
+  const redis = new RedisClient({
+    url: Deno.env.get("UPSTASH_REDIS_URL") ?? "",
+    token: Deno.env.get("UPSTASH_REDIS_TOKEN") ?? "",
+  });
+
   let messagesSent = 0;
   let errors = 0;
   let campaignCount = 0;
@@ -48,6 +55,13 @@ Deno.serve(async (_req: Request) => {
 
     for (const campaign of campaigns) {
       try {
+        // Track campaign usage (no blocking, just counting)
+        try {
+          await checkCampaignQuota(redis, supabase, campaign.unitId);
+        } catch {
+          // Usage tracking failure should never block campaigns
+        }
+
         const units = await supabase.query<Unit>("Unit", {
           filters: { id: `eq.${campaign.unitId}` },
           limit: 1,

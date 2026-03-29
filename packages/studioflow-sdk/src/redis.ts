@@ -56,4 +56,19 @@ export class RedisClient {
   async del(key: string): Promise<void> {
     await this.command(["DEL", key]);
   }
+
+  /** Increment a key by 1. Returns new value. Creates key with value 1 if not exists. */
+  async incr(key: string): Promise<number> {
+    return this.command<number>(["INCR", key]);
+  }
+
+  /** Set expiration on an existing key (seconds). */
+  async expire(key: string, ttlSeconds: number): Promise<void> {
+    await this.command(["EXPIRE", key, ttlSeconds]);
+  }
+
+  /** Get TTL of a key in seconds. Returns -1 if no expiry, -2 if key doesn't exist. */
+  async ttl(key: string): Promise<number> {
+    return this.command<number>(["TTL", key]);
+  }
 }
