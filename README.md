@@ -37,6 +37,8 @@ studioflow-backend/
 ├── apps/
 │   ├── edge-whatsapp-webhook/    # Webhook WhatsApp (agente IA)
 │   │   └── index.ts
+│   ├── edge-whatsapp-sessions/   # Gerenciamento de sessões WAHA
+│   │   └── index.ts
 │   ├── edge-cron-confirmacao/    # Cron: confirma agendamentos PENDING
 │   │   └── index.ts
 │   ├── edge-cron-lembretes/      # Cron: lembrete para amanhã
@@ -224,7 +226,39 @@ curl http://localhost:3000/api/sessions -H "X-Api-Key: sua-chave-waha"
 # Deve retornar []
 ```
 
-### 5. Conectar número WhatsApp (1 por Unit)
+### 5. Conectar número WhatsApp (via API do StudioFlow)
+
+Após o deploy, use a Edge Function de gerenciamento de sessões:
+
+```bash
+# Conectar uma Unit (cria sessão WAHA + gera QR Code)
+curl -X POST https://xrarnvibyloemhsrvejy.supabase.co/functions/v1/edge-whatsapp-sessions/{UNIT_ID}/connect \
+  -H "Authorization: Bearer SUA_SERVICE_ROLE_KEY"
+
+# Resposta:
+# {
+#   "unitId": "abc-123",
+#   "session": "studioflow-centro",
+#   "status": "SCAN_QR_CODE",
+#   "qrCode": "2@ABC123...",       ← texto para gerar QR no frontend
+#   "qrImage": "data:image/png;base64,...",  ← imagem pronta
+#   "message": "Scan the QR code with WhatsApp on your phone."
+# }
+
+# Verificar status
+curl https://xrarnvibyloemhsrvejy.supabase.co/functions/v1/edge-whatsapp-sessions/{UNIT_ID}/status \
+  -H "Authorization: Bearer SUA_SERVICE_ROLE_KEY"
+
+# Pegar QR Code atualizado (se expirou)
+curl https://xrarnvibyloemhsrvejy.supabase.co/functions/v1/edge-whatsapp-sessions/{UNIT_ID}/qr \
+  -H "Authorization: Bearer SUA_SERVICE_ROLE_KEY"
+
+# Desconectar
+curl -X POST https://xrarnvibyloemhsrvejy.supabase.co/functions/v1/edge-whatsapp-sessions/{UNIT_ID}/disconnect \
+  -H "Authorization: Bearer SUA_SERVICE_ROLE_KEY"
+```
+
+Ou direto no WAHA (sem o middleware):
 
 ```bash
 curl -X POST http://localhost:3000/api/sessions \
@@ -252,6 +286,7 @@ O valor `"name"` deve ser igual ao campo `whatsappInstance` na tabela `Unit`.
 ```bash
 # Deploy de todas as funções
 supabase functions deploy edge-whatsapp-webhook --project-ref xrarnvibyloemhsrvejy
+supabase functions deploy edge-whatsapp-sessions --project-ref xrarnvibyloemhsrvejy
 supabase functions deploy edge-cron-confirmacao --project-ref xrarnvibyloemhsrvejy
 supabase functions deploy edge-cron-lembretes --project-ref xrarnvibyloemhsrvejy
 supabase functions deploy edge-cron-noshow --project-ref xrarnvibyloemhsrvejy
@@ -371,6 +406,61 @@ SELECT cron.schedule('cron-remarketing', '0 9 * * *',
 | `empty_message` | Body vazio |
 | `unit_not_found` | Nenhuma Unit com esse whatsappInstance |
 | `ai_disabled` | Unit tem aiEnabled = false |
+
+### Gerenciamento de Sessões WhatsApp
+
+Todas requerem header `Authorization: Bearer <SUPABASE_SERVICE_ROLE_KEY>`.
+
+| Rota | Método | Descrição |
+|---|---|---|
+| `/functions/v1/edge-whatsapp-sessions` | `GET` | Lista todas as sessões WAHA |
+| `/functions/v1/edge-whatsapp-sessions/:unitId/status` | `GET` | Status da sessão (WORKING, SCAN_QR_CODE, STOPPED...) |
+| `/functions/v1/edge-whatsapp-sessions/:unitId/connect` | `POST` | Cria sessão + configura webhook + retorna QR Code |
+| `/functions/v1/edge-whatsapp-sessions/:unitId/qr` | `GET` | Retorna QR Code (texto raw para renderizar no frontend) |
+| `/functions/v1/edge-whatsapp-sessions/:unitId/qr-image` | `GET` | Retorna QR Code como `data:image/png;base64,...` |
+| `/functions/v1/edge-whatsapp-sessions/:unitId/disconnect` | `POST` | Desconecta o WhatsApp (logout + stop) |
+| `/functions/v1/edge-whatsapp-sessions/:unitId/restart` | `POST` | Reinicia a sessão |
+| `/functions/v1/edge-whatsapp-sessions/:unitId/delete` | `DELETE` | Remove a sessão permanentemente |
+
+**Fluxo de conexão no frontend:**
+
+```
+1. POST /:unitId/connect
+   → Cria sessão no WAHA, retorna qrCode/qrImage
+
+2. Frontend exibe QR Code (usando qrImage ou gerando a partir de qrCode)
+
+3. Usuário escaneia QR com WhatsApp
+
+4. Frontend faz polling: GET /:unitId/status (a cada 3s)
+   → Quando status = "WORKING" → conectado!
+
+5. Se QR expirar: GET /:unitId/qr → novo QR Code
+```
+
+**Respostas padrão:**
+
+```json
+{
+  "unitId": "abc-123",
+  "unitName": "StudioFlow Centro",
+  "session": "studioflow-centro",
+  "status": "WORKING",
+  "connected": true,
+  "me": { "id": "5511940021001@c.us", "pushName": "StudioFlow Centro" }
+}
+```
+
+**Status possíveis:**
+
+| Status | Descrição |
+|---|---|
+| `NOT_CREATED` | Sessão não existe no WAHA |
+| `STOPPED` | Sessão parada |
+| `STARTING` | Sessão iniciando |
+| `SCAN_QR_CODE` | Aguardando scan do QR Code |
+| `WORKING` | Conectado e funcionando |
+| `FAILED` | Erro na sessão |
 
 ### Cron Functions
 
