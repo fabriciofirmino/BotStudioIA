@@ -55,16 +55,11 @@ Deno.serve(async (_req: Request) => {
 
     for (const campaign of campaigns) {
       try {
-        // Check campaign quota for this unit
-        const campaignQuota = await checkCampaignQuota(redis, supabase, campaign.unitId);
-        if (!campaignQuota.allowed) {
-          structuredLog("warn", "campaign_quota_exceeded", {
-            campaignId: campaign.id,
-            unitId: campaign.unitId,
-            current: campaignQuota.current,
-            limit: campaignQuota.limit,
-          });
-          continue;
+        // Track campaign usage (no blocking, just counting)
+        try {
+          await checkCampaignQuota(redis, supabase, campaign.unitId);
+        } catch {
+          // Usage tracking failure should never block campaigns
         }
 
         const units = await supabase.query<Unit>("Unit", {
